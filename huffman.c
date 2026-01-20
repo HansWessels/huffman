@@ -203,7 +203,7 @@ void make_huffman_codes(int s_len[], uint64_t huff_codes[], int symbol_count)
     }
 }
 
-int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_freq[], const int max_huff_len, const int symbol_size)
+int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_freq[], int max_huff_len, const int symbol_size)
 {
     uint64_t freq_array[MAX_SYMBOL_SIZE+MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN]={0};
     int c_left_array[MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN];
@@ -243,48 +243,99 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
         }
     } while(i>0);
     sort_symbols(symbols, freq, symbol_count);
-    i=max_huff_len;
-    pairs_count=0;
+    pairs_count=symbol_count>>1;
+    i=pairs_count;
+    do
+    { /* eerste ronde, gewoon de gegeven character bij elkaar voegen */
+        i--;
+        freq[node]=freq[symbols[i*2]]+freq[symbols[i*2+1]];
+        c_left[node]=symbols[i*2];
+        c_right[node]=symbols[i*2+1];
+        pairs[i]=node;
+        node--;
+    } while(i>0);
+    max_huff_len--;
     do
     { /* merge symbols, max_huff_len keer */
-        int merge_pos=pairs_count+symbol_count-1;
         int symbol_pos=symbol_count-1;
         int pair_pos=pairs_count-1;
-        do
-        { /* merge symbols met pairs */
-            if(pair_pos<0)
+        uint64_t next_symbol_freq=freq[symbols[symbol_pos]];
+        uint64_t next_pair_freq=freq[pairs[pair_pos]];
+        pairs_count=symbol_count+pairs_count;
+        if((pairs_count)&1)
+        {
+            if(next_pair_freq>next_symbol_freq)
             {
-                pairs[merge_pos]=symbols[symbol_pos];
-                merge_pos--;
-                symbol_pos--;
-            }
-            else if(freq[symbols[symbol_pos]]>=freq[pairs[pair_pos]])
-            {
-                pairs[merge_pos]=symbols[symbol_pos];
-                merge_pos--;
-                symbol_pos--;
+                pair_pos--;
+                next_pair_freq=freq[pairs[pair_pos]];
             }
             else
             {
-                pairs[merge_pos]=pairs[pair_pos];
-                merge_pos--;
-                pair_pos--;
+                symbol_pos--;
+                next_symbol_freq=freq[symbols[symbol_pos]];
             }
-        } while(symbol_pos>=0);
-        int total_pairs=(pairs_count+symbol_count)/2;
-        pairs_count=0;
+        }
+        pairs_count>>=1;
+        i=pairs_count;
         do
         { /* maak de nieuwe pairs */
-            freq[node]=freq[pairs[pairs_count*2]]+freq[pairs[pairs_count*2+1]];
-            c_left[node]=pairs[pairs_count*2];
-            c_right[node]=pairs[pairs_count*2+1];
-            pairs[pairs_count]=node;
-            pairs_count++;
-            total_pairs--;
+            int node_freq;
+            i--;
+            if(next_pair_freq>next_symbol_freq)
+            {
+                node_freq=next_pair_freq;
+                c_left[node]=pairs[pair_pos];
+                pair_pos--;
+                if(pair_pos<0)
+                {
+                    next_pair_freq=0;
+                }
+                else
+                {
+                    next_pair_freq=freq[pairs[pair_pos]];
+                }
+            }
+            else
+            {
+                node_freq=next_symbol_freq;
+                c_left[node]=symbols[symbol_pos];
+                symbol_pos--;
+                next_symbol_freq=freq[symbols[symbol_pos]];
+            }
+            if(next_pair_freq>next_symbol_freq)
+            {
+                node_freq+=next_pair_freq;
+                c_right[node]=pairs[pair_pos];
+                pair_pos--;
+                if(pair_pos<0)
+                {
+                    next_pair_freq=0;
+                }
+                else
+                {
+                    next_pair_freq=freq[pairs[pair_pos]];
+                }
+            }
+            else
+            {
+                node_freq+=next_symbol_freq;
+                c_right[node]=symbols[symbol_pos];
+                symbol_pos--;
+                if(symbol_pos>=0)
+                {
+                    next_symbol_freq=freq[symbols[symbol_pos]];
+                }
+                else
+                {
+                    next_symbol_freq=0;
+                }
+            }
+            freq[node]=node_freq;
+            pairs[i]=node;
             node--;
-        } while(total_pairs>0);
-        i--;
-    } while(i>0);
+        } while(i>0);
+        max_huff_len--;
+    } while(max_huff_len>0);
     memset(s_len, 0, symbol_size*sizeof(s_len[0]));
     i=pairs_count; /* N symbolen levert altidj N-1 pairs op */
     do

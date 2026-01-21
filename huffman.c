@@ -256,14 +256,14 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
     } while(i>0);
     max_huff_len--;
     do
-    { /* merge symbols, max_huff_len keer */
+    { /* merge symbols, max_huff_len-1 keer */
         int symbol_pos=symbol_count-1;
         int pair_pos=pairs_count-1;
         uint64_t next_symbol_freq=freq[symbols[symbol_pos]];
         uint64_t next_pair_freq=freq[pairs[pair_pos]];
         pairs_count=symbol_count+pairs_count;
         if((pairs_count)&1)
-        {
+        { /* oneven som, waarde met hoogste freq doet niet mee */
             if(next_pair_freq>next_symbol_freq)
             {
                 pair_pos--;
@@ -277,8 +277,8 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
         }
         pairs_count>>=1;
         i=pairs_count;
-        do
-        { /* maak de nieuwe pairs */
+        for(;;)
+        { /* maak de nieuwe pairs, exit lus altijd door dat de pairs op zijn */
             int node_freq;
             i--;
             if(next_pair_freq>next_symbol_freq)
@@ -287,8 +287,12 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
                 c_left[node]=pairs[pair_pos];
                 pair_pos--;
                 if(pair_pos<0)
-                {
-                    next_pair_freq=0;
+                { /* pairs zijn op, koppel met symbol en exit */
+                    node_freq+=next_symbol_freq;
+                    freq[node]=node_freq;
+                    c_right[node]=symbols[symbol_pos];
+                    symbol_pos--;
+                    break;
                 }
                 else
                 {
@@ -308,8 +312,9 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
                 c_right[node]=pairs[pair_pos];
                 pair_pos--;
                 if(pair_pos<0)
-                {
-                    next_pair_freq=0;
+                { /* pairs zijn op, exit */
+                    freq[node]=node_freq;
+                    break;
                 }
                 else
                 {
@@ -321,16 +326,20 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
                 node_freq+=next_symbol_freq;
                 c_right[node]=symbols[symbol_pos];
                 symbol_pos--;
-                if(symbol_pos>=0)
-                {
-                    next_symbol_freq=freq[symbols[symbol_pos]];
-                }
-                else
-                {
-                    next_symbol_freq=0;
-                }
+                next_symbol_freq=freq[symbols[symbol_pos]];
             }
             freq[node]=node_freq;
+            pairs[i]=node;
+            node--;
+        }
+        pairs[i]=node;
+        node--;
+        do
+        { /* koppel de laatste pairs */
+            i--;
+            freq[node]=freq[symbols[i*2]]+freq[symbols[i*2+1]];
+            c_left[node]=symbols[i*2];
+            c_right[node]=symbols[i*2+1];
             pairs[i]=node;
             node--;
         } while(i>0);
@@ -347,7 +356,7 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
     return 0;
 }
 
-int encode(const uint8_t *data, const int64_t size, const int symbol_size, const int max_huff_len)
+uint64_t encode(const uint8_t *data, const int64_t size, const int symbol_size, const int max_huff_len)
 {
     uint64_t freq[SYMBOL_SIZE]={0};
     int s_len[SYMBOL_SIZE];
@@ -362,9 +371,8 @@ int encode(const uint8_t *data, const int64_t size, const int symbol_size, const
         {
             totaal+=freq[i]*s_len[i];
         }
-        printf("Total_bits(max_huf=%i)=%lu\n", max_huff_len, totaal);
+        return totaal;
     }
-    return 0;
 }
 
 int main(int argc, char* argv[])
@@ -373,6 +381,7 @@ int main(int argc, char* argv[])
 	int i;
 	i=1;
 	make_crc32_table(crc_table);
+	uint64_t totaal=0;
 	while(i<argc)
 	{
 		uint32_t crc;
@@ -387,9 +396,10 @@ int main(int argc, char* argv[])
 			printf("Error loading %s\n", argv[i]);
 			return -1;
 		}
-		encode(data, size, symbol_size, max_huff_len);
+		totaal+=encode(data, size, symbol_size, max_huff_len);
 		free(data);
 		i++;
 	}
+	printf("Totaal = %lu\n", totaal);
     return 0;
 }

@@ -5,12 +5,47 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <inttypes.h> // https://en.cppreference.com/w/c/types/integer.html#Format_macro_constants
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_SYMBOL_SIZE 512
-#define SYMBOL_SIZE 256
+
+#define MAX_SYMBOL_SIZE 256
 #define MAX_HUFFMAN_LEN 64
+#define SYMBOL_SIZE 256
+
+#if MAX_SYMBOL_SIZE <= 256 /* voor max_symbol_size <=256 */
+    typedef uint_fast8_t symbol_t;
+    typedef int_fast16_t symbol_count_t;
+#elif MAX_SYMBOL_SIZE <= 32768 /* voor max_simbol_size <=32768 */
+    typedef uint_fast16_t symbol_t;
+    typedef int_fast16_t symbol_count_t;
+#elif MAX_SYMBOL_SIZE <= 65536 /* voor max_simbol_size <=65536 */
+    typedef uint_fast16_t symbol_t;
+    typedef int_fast32_t symbol_count_t;
+#elif MAX_SYMBOL_SIZE <= (1<<31) /* voor max_simbol_size <=1<<31 */
+    typedef uint_fast32_t symbol_t;
+    typedef int_fast32_t symbol_count_t;
+#elif MAX_SYMBOL_SIZE <= (1<<32) /* voor max_simbol_size <=1<<32 */
+    typedef uint_fast32_t symbol_t;
+    typedef int_fast64_t symbol_count_t;
+#elif 0 /* rest */
+    typedef uint_fast64_t symbol_t;
+    typedef int_fast64_t symbol_count_t;
+#endif
+
+
+#if MAX_HUFFMAN_LEN <= 8
+    typedef uint_fast8_t huffman_t;
+#elif MAX_HUFFMAN_LEN <= 16
+    typedef uint_fast16_t huffman_t;
+#elif MAX_HUFFMAN_LEN <= 32
+    typedef uint_fast32_t huffman_t;
+#else
+    typedef uint64_t huffman_t;
+#endif
+typedef uint64_t freq_t;
+
 
 /*
 ** ARJ CRC32 routines
@@ -118,19 +153,60 @@ int64_t load_file(char* infile, uint8_t** data_in)
 	return size;
 }
 
-void freq_count(const uint8_t *data, int64_t size, uint64_t freq[])
+void freq_count(const uint8_t *data, int64_t size, freq_t freq[], symbol_count_t symbol_size)
 {
-	while(size>0)
-	{
-		size--;
-		freq[data[size]]++;
-	}
+    if(symbol_size>(1<<24))
+    {
+        while(size>=4)
+        {
+            uint32_t tmp;
+            tmp=data[size--];
+            tmp<<=8;
+            tmp+=data[size--];
+            tmp<<=8;
+            tmp+=data[size--];
+            tmp<<=8;
+            tmp+=data[size--];
+            freq[tmp]++;
+        }
+    }
+    else if(symbol_size>(1<<16))
+    {
+        while(size>=3)
+        {
+            uint32_t tmp;
+            tmp=data[size--];
+            tmp<<=8;
+            tmp+=data[size--];
+            tmp<<=8;
+            tmp+=data[size--];
+            freq[tmp]++;
+        }
+    }
+    else if(symbol_size>(1<<8))
+    {
+        while(size>=2)
+        {
+            uint16_t tmp;
+            tmp=data[size--];
+            tmp<<=8;
+            tmp+=data[size--];
+            freq[tmp]++;
+        }
+    }
+    else
+    {
+        while(size>0)
+        {
+            freq[data[size--]]++;
+        }
+    }
 }
 
 int freq_compare(const void* a_in, const void* b_in)
 {
-    uint64_t* a=(uint64_t *)a_in;
-    uint64_t* b=(uint64_t *)b_in;
+    freq_t* a=(freq_t *)a_in;
+    freq_t* b=(freq_t *)b_in;
     if(*a<*b)
     {
         return -1;
@@ -142,10 +218,10 @@ int freq_compare(const void* a_in, const void* b_in)
     return 0;
 }
 
-void sort_symbols(int symbols[MAX_SYMBOL_SIZE], uint64_t freq[MAX_SYMBOL_SIZE], int symbol_count)
+void sort_symbols(symbol_t symbols[MAX_SYMBOL_SIZE], freq_t freq[MAX_SYMBOL_SIZE], symbol_count_t symbol_count)
 {
-    uint64_t pairs[2*MAX_SYMBOL_SIZE];
-    int i;
+    freq_t pairs[2*MAX_SYMBOL_SIZE];
+    symbol_count_t i;
     for(i=0; i<symbol_count; i++)
     {
         pairs[2*i]=freq[symbols[i]];
@@ -154,11 +230,11 @@ void sort_symbols(int symbols[MAX_SYMBOL_SIZE], uint64_t freq[MAX_SYMBOL_SIZE], 
     qsort(pairs, symbol_count, 2*sizeof(uint64_t), freq_compare);
     for(i=0; i<symbol_count; i++)
     {
-        symbols[i]=(int)pairs[2*i+1];
+        symbols[i]=(symbol_t)pairs[2*i+1];
     }
 }
 
-void walk_tree(int node, int c_left[MAX_SYMBOL_SIZE], int c_right[MAX_SYMBOL_SIZE], int s_len[])
+void walk_tree(symbol_count_t node, symbol_count_t c_left[MAX_SYMBOL_SIZE], symbol_count_t c_right[MAX_SYMBOL_SIZE], int s_len[])
 {
     if(node<0)
     {
@@ -171,18 +247,18 @@ void walk_tree(int node, int c_left[MAX_SYMBOL_SIZE], int c_right[MAX_SYMBOL_SIZ
     }
 }
 
-void make_huffman_codes(int s_len[], uint64_t huff_codes[], int symbol_count)
+void make_huffman_codes(int s_len[], huffman_t huff_codes[], symbol_count_t symbol_count)
 {
     int len_count[MAX_HUFFMAN_LEN+1]={0};
-    uint64_t huffcode[MAX_HUFFMAN_LEN+1];
-    int i;
+    huffman_t huffcode[MAX_HUFFMAN_LEN+1];
+    symbol_count_t i;
     i=symbol_count;
     do
     {
         i--;
         len_count[s_len[i]]++;
     } while(i>0);
-    uint64_t start_huffcode=0;
+    huffman_t start_huffcode=0;
     for(i=1; i<=MAX_HUFFMAN_LEN; i++)
     {
         start_huffcode<<=1;
@@ -203,20 +279,19 @@ void make_huffman_codes(int s_len[], uint64_t huff_codes[], int symbol_count)
     }
 }
 
-int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_freq[], int max_huff_len, const int symbol_size)
+int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq[], int max_huff_len, const symbol_count_t symbol_size)
 {
-    uint64_t freq_array[MAX_SYMBOL_SIZE+MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN]={0};
-    int c_left_array[MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN];
-    int c_right_array[MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN];
-    int symbols[MAX_SYMBOL_SIZE];
-    int pairs[2*MAX_SYMBOL_SIZE];
-    uint64_t* freq=freq_array+MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN;
-    int* c_left=c_left_array+MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN;
-    int* c_right=c_right_array+MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN;
-    int symbol_count=0;
-    int pairs_count;
-    int node=-1;
-    int i;
+    freq_t freq_array[MAX_SYMBOL_SIZE+MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN]={0};
+    symbol_count_t c_left_array[MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN];
+    symbol_count_t c_right_array[MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN];
+    symbol_t symbols[MAX_SYMBOL_SIZE];
+    symbol_count_t pairs[MAX_SYMBOL_SIZE];
+    freq_t* freq=freq_array+MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN;
+    symbol_count_t* c_left=c_left_array+MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN;
+    symbol_count_t* c_right=c_right_array+MAX_SYMBOL_SIZE*MAX_HUFFMAN_LEN;
+    symbol_count_t symbol_count=0;
+    symbol_count_t pairs_count;
+    symbol_count_t node=-1;
     const uint64_t een=1;
     if(max_huff_len>MAX_HUFFMAN_LEN)
     {
@@ -227,11 +302,11 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
     {
         if((een<<max_huff_len)<symbol_size)
         {
-            printf("(1<<max_huff_len) < symbol_size : 1<<%i < %i", max_huff_len, symbol_size);
+            printf("(1<<max_huff_len) < symbol_size : 1<<%" PRIX64 " < %" PRIX64 "\n", een<<max_huff_len, symbol_size);
             return -1;
         }
     }
-    i=symbol_size;
+    symbol_count_t i=symbol_size;
     do
     { /* hoeveel symbols zijn er met een freq>0? */
         i--;
@@ -257,10 +332,10 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
     max_huff_len--;
     do
     { /* merge symbols, max_huff_len-1 keer */
-        int symbol_pos=symbol_count-1;
-        int pair_pos=pairs_count-1;
-        uint64_t next_symbol_freq=freq[symbols[symbol_pos]];
-        uint64_t next_pair_freq=freq[pairs[pair_pos]];
+        symbol_count_t symbol_pos=symbol_count-1;
+        symbol_count_t pair_pos=pairs_count-1;
+        freq_t next_symbol_freq=freq[symbols[symbol_pos]];
+        freq_t next_pair_freq=freq[pairs[pair_pos]];
         pairs_count=symbol_count+pairs_count;
         if((pairs_count)&1)
         { /* oneven som, waarde met hoogste freq doet niet mee */
@@ -278,8 +353,8 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
         pairs_count>>=1;
         i=pairs_count;
         for(;;)
-        { /* maak de nieuwe pairs, exit lus altijd door dat de pairs op zijn */
-            int node_freq;
+        { /* maak de nieuwe pairs, exit lus altijd doordat de pairs op zijn */
+            freq_t node_freq;
             i--;
             if(next_pair_freq>next_symbol_freq)
             {
@@ -356,17 +431,16 @@ int make_huffman_table(int s_len[], uint64_t huff_codes[], const uint64_t in_fre
     return 0;
 }
 
-uint64_t encode(const uint8_t *data, const int64_t size, const int symbol_size, const int max_huff_len)
+uint64_t encode(const uint8_t *data, const int64_t size, const symbol_count_t symbol_size, const int max_huff_len)
 {
-    uint64_t freq[SYMBOL_SIZE]={0};
+    freq_t freq[SYMBOL_SIZE]={0};
     int s_len[SYMBOL_SIZE];
-    uint64_t huffcodes[SYMBOL_SIZE];
-    int i;
-    freq_count(data, size, freq);
+    huffman_t huffcodes[SYMBOL_SIZE];
+    freq_count(data, size, freq, symbol_size);
     make_huffman_table(s_len, huffcodes, freq, max_huff_len, symbol_size);
     {
         uint64_t totaal=0;
-        int i;
+        symbol_count_t i;
         for(i=0; i<symbol_size; i++)
         {
             totaal+=freq[i]*s_len[i];

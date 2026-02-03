@@ -74,7 +74,7 @@ typedef uint64_t freq_t;
 uint64_t time_huffman=0;
 uint64_t time_sort=0;
 uint64_t time_walktree=0;
-
+uint64_t time_normal_tree=0;
 
 /*
 ** ARJ CRC32 routines
@@ -232,6 +232,9 @@ int freq_compare(const void* a_in, const void* b_in)
     return 0;
 }
 
+/*
+ * sorten met Q sort is ongeveer twee maal langzamer als radix sort
+ */
 void sort_symbols(symbol_t symbols[MAX_SYMBOL_SIZE], freq_t freq[MAX_SYMBOL_SIZE], symbol_count_t symbol_count)
 {
     freq_compare_t pairs[MAX_SYMBOL_SIZE];
@@ -249,6 +252,32 @@ void sort_symbols(symbol_t symbols[MAX_SYMBOL_SIZE], freq_t freq[MAX_SYMBOL_SIZE
     }
 }
 
+/*
+ * Het lijkt er op dat het geen zin heeft om voor kleine datasets insertion sort te
+ * gebruiken i.p.v. radix sort, ik heb geen significante tijd wints kunnen meten.
+ */
+
+ #define INSERTION_GRENS 16
+
+void insertion_sort_symbols(symbol_t symbols[MAX_SYMBOL_SIZE], freq_t freq[MAX_SYMBOL_SIZE], symbol_count_t symbol_count)
+{
+    symbol_count_t i;
+    for(i=1; i<symbol_count; i++)
+    {
+        freq_t cur_freq=freq[i];
+        symbol_t cur_symbol=symbols[i];
+        symbol_count_t pos=i-1;
+        while(pos>=0 && (freq[pos]>cur_freq))
+        {
+            freq[pos+1]=freq[pos];
+            symbols[pos+1]=symbols[pos];
+            pos--;
+        }
+        freq[pos+1]=cur_freq;
+        symbols[pos+1]=cur_symbol;
+    }
+}
+
 void radix_sort_symbols(symbol_t symbols[MAX_SYMBOL_SIZE], freq_t freq[MAX_SYMBOL_SIZE], symbol_count_t symbol_count)
 {
     symbol_t tmp_symbols[MAX_SYMBOL_SIZE];
@@ -261,7 +290,10 @@ void radix_sort_symbols(symbol_t symbols[MAX_SYMBOL_SIZE], freq_t freq[MAX_SYMBO
     symbol_count_t bucket[BUCKET_SIZE];
     freq_t max=0;
     int shift=0;
-
+    if(symbol_count<INSERTION_GRENS)
+    {
+        insertion_sort_symbols(symbols, freq, symbol_count);
+    }
     symbol_count_t i=symbol_count;
     do
     {
@@ -340,16 +372,23 @@ int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t sym
 {
     int max_len=0;
     symbol_count_t max_len_symbol;
-    symbol_count_t i=symbol_count;
+    symbol_count_t i;
     int result=0;
+    i=symbol_count;
+    max_len_symbol=0;
     do
     {
         i--;
         if(s_len[i]>max_len)
         {
             max_len=s_len[i];
+            max_len_symbol++;
         }
     } while(i>0);
+    if((max_len_symbol<2) && (max_len<=1))
+    { /* aantal symbolen <2, noets te checken */
+        return result;
+    }
     /* max_len > max_huff_len? */
     if(max_len>max_huff_len)
     {
@@ -478,6 +517,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
     static symbol_count_t tree_array[MAX_HUFFMAN_LEN*MAX_SYMBOL_SIZE*2];
     static symbol_t symbols[MAX_SYMBOL_SIZE];
     static freq_t pairs_freq[MAX_SYMBOL_SIZE];
+    static int len[2*MAX_SYMBOL_SIZE];
     symbol_count_t* tree=tree_array;
     freq_t* freq=freq_array+1;
     symbol_count_t symbol_count=0;
@@ -516,13 +556,97 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
     } while(i>0);
     if(symbol_count<3)
     {
-        return -1;
+        huffman_t code=0;
+        memset(s_len, 0, symbol_size*sizeof(s_len[0]));
+        memset(huff_codes, 0, symbol_size*sizeof(huff_codes[0]));
+        for(i=0; i<symbol_size; i++)
+        {
+            if(in_freq[i]!=0)
+            {
+                huff_codes[i]=code;
+                code++;
+                s_len[i]=1;
+            }
+        }
+        return 0;
     }
     {
         uint64_t time_start=rdtsc();
-        //radix_sort_symbols(symbols, freq, symbol_count);
-        sort_symbols(symbols, freq, symbol_count);
+        radix_sort_symbols(symbols, freq, symbol_count);
+        //sort_symbols(symbols, freq, symbol_count);
         time_sort+=rdtsc()-time_start;
+    }
+    if(0)
+    { /* eerst een traditionele huffmanboom bouwen */
+        uint64_t time_start=rdtsc();
+        freq_t parent_freq;
+        symbol_count_t tree_pos=0;
+        symbol_count_t symbol_pos=0;
+        symbol_count_t pair_pos=1;
+        symbol_count_t node;
+        freq[symbol_count]=~0; /* sentry */
+        for(node=2; node<symbol_count; node++)
+        {
+            pairs_freq[node]=~0; /* sentries */
+        }
+        node=symbol_count;
+        do
+        {
+            if(freq[symbol_pos]<=pairs_freq[pair_pos])
+            {
+                tree[tree_pos]=symbols[symbol_pos];
+                parent_freq=freq[symbol_pos];
+                symbol_pos++;
+            }
+            else
+            {
+                tree[tree_pos]=-symbol_pos;
+                parent_freq=pairs_freq[symbol_pos];
+                pair_pos++;
+            }
+            tree_pos++;
+            if(freq[symbol_pos]<=pairs_freq[pair_pos])
+            {
+                tree[tree_pos]=symbols[symbol_pos];
+                parent_freq+=freq[symbol_pos];
+                symbol_pos++;
+            }
+            else
+            {
+                tree[tree_pos]=-symbol_pos;
+                parent_freq+=pairs_freq[symbol_pos];
+                pair_pos++;
+            }
+            tree_pos++;
+            tree[tree_pos]=node;
+            pairs_freq[node]=parent_freq;
+            node++;
+            tree_pos++;
+        } while(tree_pos>(3*symbol_count));
+
+        { /* bouw s_len */
+            freq[-node]=0;
+            do
+            {
+                tree_pos--;
+                parent_freq=freq[tree[tree_pos]];
+                tree_pos--;
+                freq[tree[tree_pos]]=parent_freq+1;
+                tree_pos--;
+                freq[tree[tree_pos]]=parent_freq+1;
+            } while(tree_pos>0);
+            if(parent_freq<max_huff_len)
+            {
+                for(i=0; i<symbol_count; i++)
+                {
+                    s_len[symbols[i]]=(int)freq[i];
+                }
+                make_huffman_codes(s_len, huff_codes, symbol_size);
+                time_normal_tree+=rdtsc()-time_start;
+                return 0;
+            }
+        }
+        time_normal_tree+=rdtsc()-time_start;
     }
     pairs_count=symbol_count>>1;
     i=pairs_count;
@@ -619,7 +743,6 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         } while(i>0);
         max_huff_len--;
     } while(max_huff_len>0);
-
     memset(s_len, 0, symbol_size*sizeof(s_len[0]));
     {
         uint64_t time_start=rdtsc();
@@ -702,10 +825,10 @@ int main(int argc, char* argv[])
 	uint32_t crc_table[256];
 	int i;
 	int max_huff_len;
-	uint64_t start=rdtsc();
-	uint64_t delta=4096;
+	uint64_t start;
+	uint64_t delta=4096000000;
 	int symbol_size;
-	symbol_size=65536;
+	symbol_size=256;
 	do
 	{
 	int symbol_bits=0;
@@ -715,10 +838,15 @@ int main(int argc, char* argv[])
 	    symbol_bits++;
 		tmp>>=1;
 	}
-	for(max_huff_len=symbol_bits; max_huff_len<=64; max_huff_len++)
+	max_huff_len=symbol_bits+8;
+	for(max_huff_len=symbol_bits; max_huff_len<=symbol_bits+8; max_huff_len++)
 	{
 	    i=1;
 	    make_crc32_table(crc_table);
+		start=rdtsc();
+		time_huffman=0;
+		time_sort=0;
+		time_walktree=0;
 		uint64_t totaal=0;
 		while(i<argc)
 	    {
@@ -734,17 +862,17 @@ int main(int argc, char* argv[])
 			}
 		    {
 		        uint64_t result;
-				result=encode(data, size, symbol_size, max_huff_len, delta);
+			    result=encode(data, size, symbol_size, max_huff_len, delta);
 //				printf("hufflen=%02i, size=%lu\n", max_huff_len, result);
 				totaal+=result;
 			}
 			free(data);
 			i++;
 		}
-//		printf("Totaal(%02i) = %lu\n", max_huff_len, totaal);
+		printf("Totaal(%02i) = %lu\n", max_huff_len, totaal);
+//        printf("Tijd(delta=%li, symbol_size=%i) totaal=%li make_huffmantable=%li, sort=%li, walktree=%li\n", delta, symbol_size, rdtsc()-start, time_huffman, time_sort, time_walktree);
 	}
-	printf("Tijd(delta=%li, symbol_size=%i) totaal=%li make_huffmantable=%li, sort=%li, walktree=%li\n", delta, symbol_size, rdtsc()-start, time_huffman, time_sort, time_walktree);
 	symbol_size>>=1;
-	} while(symbol_size>2);
+	} while(0); //while(symbol_size>1);
     return 0;
 }

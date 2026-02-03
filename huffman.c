@@ -19,39 +19,55 @@ uint64_t rdtsc(){
 #endif
 
 
-#define MAX_SYMBOL_SIZE 512
+#define MAX_SYMBOL_SIZE 65536
 #define MAX_HUFFMAN_LEN 64
-#define SYMBOL_SIZE 256
+#define SYMBOL_SIZE 65536
 
 #if MAX_SYMBOL_SIZE <= 256 /* voor max_symbol_size <=256 */
     typedef uint8_t symbol_t;
+    #define PRI_SYMBOL_T PRIu8
     typedef int16_t symbol_count_t;
+    #define PRI_SYMBOL_COUNT_T PRIi16
 #elif MAX_SYMBOL_SIZE <= 32768 /* voor max_simbol_size <=32768 */
     typedef uint16_t symbol_t;
+    #define PRI_SYMBOL_T PRIu16
     typedef int16_t symbol_count_t;
+    #define PRI_SYMBOL_COUNT_T PRIi16
 #elif MAX_SYMBOL_SIZE <= 65536 /* voor max_simbol_size <=65536 */
     typedef uint16_t symbol_t;
+    #define PRI_SYMBOL_T PRIu16
     typedef int32_t symbol_count_t;
+    #define PRI_SYMBOL_COUNT_T PRIi32
 #elif MAX_SYMBOL_SIZE <= (1<<31) /* voor max_simbol_size <=1<<31 */
     typedef uint32_t symbol_t;
+    #define FORMAT_SYMBOL_T PRIu32
     typedef int32_t symbol_count_t;
+    #define PRI_SYMBOL_COUNT_T PRIi32
 #elif MAX_SYMBOL_SIZE <= (1<<32) /* voor max_simbol_size <=1<<32 */
     typedef uint32_t symbol_t;
+    #define PRI_SYMBOL_T PRIu32
     typedef int64_t symbol_count_t;
+    #define F_SYMBOL_COUNT_T PRIi64
 #elif 0 /* rest */
     typedef uint64_t symbol_t;
+    #define PRI_SYMBOL_T PRIu64
     typedef int64_t symbol_count_t;
+    #define PRI_SYMBOL_COUNT_T PRIi64
 #endif
 
 
 #if MAX_HUFFMAN_LEN <= 8
     typedef uint8_t huffman_t;
+    #define PRI_HUFFMAN_T PRIX8
 #elif MAX_HUFFMAN_LEN <= 16
     typedef uint16_t huffman_t;
+    #define PRI_HUFFMAN_T PRIX16
 #elif MAX_HUFFMAN_LEN <= 32
     typedef uintt32_t huffman_t;
+    #define PRI_HUFFMAN_T PRIX32
 #else
     typedef uint64_t huffman_t;
+    #define PRI_HUFFMAN_T PRIX64
 #endif
 typedef uint64_t freq_t;
 
@@ -166,70 +182,50 @@ int64_t load_file(char* infile, uint8_t** data_in)
 	return size;
 }
 
-void freq_count(const uint8_t *data, int64_t size, freq_t freq[], symbol_count_t symbol_size)
+void freq_count(const uint8_t *data, uint64_t size, freq_t freq[], symbol_count_t symbol_size)
 {
     symbol_count_t i;
+    uint64_t pos;
     for(i=0; i<symbol_size; i++)
     {
         freq[i]=0;
     }
-    if(symbol_size>(1<<24))
+    huffman_t symbol_mask=0;
+    uint64_t current_value=0;
+    symbol_size>>=1;
+    while(symbol_size!=0)
     {
-        while(size>=4)
-        {
-            uint32_t tmp;
-            tmp=data[--size];
-            tmp<<=8;
-            tmp+=data[--size];
-            tmp<<=8;
-            tmp+=data[--size];
-            tmp<<=8;
-            tmp+=data[--size];
-            freq[tmp]++;
-        }
+        symbol_size>>=1;
+        symbol_mask<<=1;
+        symbol_mask^=1;
     }
-    else if(symbol_size>(1<<16))
+    current_value=(uint64_t)data[0]+((uint64_t)data[1]<<8)+((uint64_t)data[2]<<16)+((uint64_t)data[3]<<24)+((uint64_t)data[4]<<32)+((uint64_t)data[5]<<40)+((uint64_t)data[6]<<48);
+    current_value<<=8;
+    for(pos=0; pos<size;pos++)
     {
-        while(size>=3)
-        {
-            uint32_t tmp;
-            tmp=data[--size];
-            tmp<<=8;
-            tmp+=data[--size];
-            tmp<<=8;
-            tmp+=data[--size];
-            freq[tmp]++;
-        }
-    }
-    else if(symbol_size>(1<<8))
-    {
-        while(size>=2)
-        {
-            uint16_t tmp;
-            tmp=data[--size];
-            tmp<<=8;
-            tmp+=data[--size];
-            freq[tmp]++;
-        }
-    }
-    else
-    {
-        while(size>0)
-        {
-            freq[data[--size]]++;
-        }
+        symbol_t tmp;
+        current_value>>=8;
+        current_value+=(uint64_t)data[pos+7]<<56;
+        tmp=(symbol_t)(current_value&symbol_mask);
+        freq[tmp]++;
     }
 }
 
+typedef struct
+{
+    freq_t freq;
+    symbol_t symbol;
+} freq_compare_t;
+
 int freq_compare(const void* a_in, const void* b_in)
 {
-    freq_t* a=(freq_t *)a_in;
-    freq_t* b=(freq_t *)b_in;
-    if(*a<*b)
+    const freq_compare_t* a=(freq_compare_t *)a_in;
+    const freq_compare_t* b=(freq_compare_t *)b_in;
+    if (a->freq < b->freq)
     {
         return -1;
     }
-    else if(*a>*b)
+    if (a->freq > b->freq)
     {
         return 1;
     }
@@ -238,19 +234,216 @@ int freq_compare(const void* a_in, const void* b_in)
 
 void sort_symbols(symbol_t symbols[MAX_SYMBOL_SIZE], freq_t freq[MAX_SYMBOL_SIZE], symbol_count_t symbol_count)
 {
-    freq_t pairs[2*MAX_SYMBOL_SIZE];
+    freq_compare_t pairs[MAX_SYMBOL_SIZE];
     symbol_count_t i;
     for(i=0; i<symbol_count; i++)
     {
-        pairs[2*i]=freq[i];
-        pairs[2*i+1]=symbols[i];
+        pairs[i].freq=freq[i];
+        pairs[i].symbol=symbols[i];
     }
-    qsort(pairs, symbol_count, 2*sizeof(uint64_t), freq_compare);
+    qsort(pairs, symbol_count, sizeof(freq_compare_t), freq_compare);
     for(i=0; i<symbol_count; i++)
     {
-        freq[i]=pairs[2*i];
-        symbols[i]=(symbol_t)pairs[2*i+1];
+        freq[i]=pairs[i].freq;
+        symbols[i]=pairs[i].symbol;
     }
+}
+
+void radix_sort_symbols(symbol_t symbols[MAX_SYMBOL_SIZE], freq_t freq[MAX_SYMBOL_SIZE], symbol_count_t symbol_count)
+{
+    symbol_t tmp_symbols[MAX_SYMBOL_SIZE];
+    freq_t tmp_freq[MAX_SYMBOL_SIZE];
+
+    #define BUCKET_BITS 8
+    #define BUCKET_SIZE (1<<BUCKET_BITS)
+    #define BUCKET_MASK (BUCKET_SIZE-1)
+
+    symbol_count_t bucket[BUCKET_SIZE];
+    freq_t max=0;
+    int shift=0;
+
+    symbol_count_t i=symbol_count;
+    do
+    {
+        i--;
+        if(max<freq[i])
+        {
+            max=freq[i];
+        }
+    } while(i>0);
+
+    for(;;)
+    {
+        symbol_count_t i;
+        i=symbol_count;
+        memset(bucket, 0, sizeof(bucket));
+        do
+        {
+            i--;
+            bucket[((freq[i]>>shift) & BUCKET_MASK)]++;
+        } while(i>0);
+
+        symbol_count_t start;
+        start=0;
+        for(i=0; i<BUCKET_SIZE; i++)
+        {
+            symbol_count_t tmp=bucket[i];
+            bucket[i]=start;
+            start+=tmp;
+        }
+        for(i=0; i<symbol_count; i++)
+        {
+            int tmp=(freq[i]>>shift)&BUCKET_MASK;
+            tmp_freq[bucket[tmp]]=freq[i];
+            tmp_symbols[bucket[tmp]]=symbols[i];
+            bucket[tmp]++;
+        }
+        max>>=BUCKET_BITS;
+        if(max==0)
+        {
+            memcpy(freq, tmp_freq, symbol_count*sizeof(freq[0]));
+            memcpy(symbols, tmp_symbols, symbol_count*sizeof(symbols[0]));
+            return;
+        }
+        shift+=BUCKET_BITS;
+        i=symbol_count;
+        memset(bucket, 0, sizeof(bucket));
+        do
+        {
+            i--;
+            bucket[((tmp_freq[i]>>shift) & BUCKET_MASK)]++;
+        } while(i>0);
+        start=0;
+        for(i=0; i<BUCKET_SIZE; i++)
+        {
+            symbol_count_t tmp=bucket[i];
+            bucket[i]=start;
+            start+=tmp;
+        }
+        for(i=0; i<symbol_count; i++)
+        {
+            int tmp=(tmp_freq[i]>>shift)&BUCKET_MASK;
+            freq[bucket[tmp]]=tmp_freq[i];
+            symbols[bucket[tmp]]=tmp_symbols[i];
+            bucket[tmp]++;
+        }
+        max>>=BUCKET_BITS;
+        if(max==0)
+        {
+            return;
+        }
+        shift+=BUCKET_BITS;
+    }
+}
+
+int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t symbol_count, int max_huff_len)
+{
+    int max_len=0;
+    symbol_count_t max_len_symbol;
+    symbol_count_t i=symbol_count;
+    int result=0;
+    do
+    {
+        i--;
+        if(s_len[i]>max_len)
+        {
+            max_len=s_len[i];
+        }
+    } while(i>0);
+    /* max_len > max_huff_len? */
+    if(max_len>max_huff_len)
+    {
+        i=symbol_count;
+        do
+        {
+            i--;
+            if(s_len[i]>max_huff_len)
+            {
+                fprintf(stderr, "Te lange huffmancode: s_len[%"PRI_SYMBOL_COUNT_T"]=%i, huffcode=%" PRI_HUFFMAN_T " > %i (MAX_HUFF_LEN)\n", i, s_len[i], huff_codes[i], max_huff_len);
+                result++;
+            }
+        }
+        while(i>0);
+    }
+    /* is geen van de huffman_codes > max_len? */
+    {
+        uint64_t mask;
+        mask=0;
+        mask=~mask;
+        mask<<=max_len;
+        i=symbol_count;
+        do
+        {
+            i--;
+            if((huff_codes[i]&mask)!=0)
+            {
+                fprintf(stderr, "Te lange huffmancode: s_len[%"PRI_SYMBOL_COUNT_T"]=%i, huffcode=%" PRI_HUFFMAN_T "\n", i, s_len[i], huff_codes[i]);
+                result++;
+            }
+        } while(i>0);
+    }
+    /* klopt de tree? */
+    {
+        int len_count[MAX_HUFFMAN_LEN+1]={0};
+        huffman_t huffcode[MAX_HUFFMAN_LEN+1];
+        huffman_t max_code;
+        symbol_count_t i;
+        i=symbol_count;
+        do
+        {
+            i--;
+            len_count[s_len[i]]++;
+        } while(i>0);
+        huffman_t start_huffcode=0;
+        huffcode[0]=0;
+        for(i=1; i<=MAX_HUFFMAN_LEN; i++)
+        {
+            start_huffcode<<=1;
+            huffcode[i]=start_huffcode;
+            start_huffcode+=len_count[i];
+        }
+        for(i=0; i<symbol_count; i++)
+        {
+            if(huff_codes[i]!=huffcode[s_len[i]])
+            {
+                fprintf(stderr, "Foute huffman code: huff_code[%"PRI_SYMBOL_COUNT_T"]=%" PRI_HUFFMAN_T "!=%" PRI_HUFFMAN_T "\n", i, huff_codes[i], huffcode[s_len[i]]);
+                result++;
+            }
+            if(s_len[i]!=0)
+            {
+                huffcode[s_len[i]]++;
+            }
+        }
+        i=symbol_count;
+        max_code=0;
+        do
+        {
+            i--;
+            if(huff_codes[i]>max_code)
+            {
+                max_code=huff_codes[i];
+                max_len_symbol=i;
+            }
+        } while(i>0);
+        i=max_len;
+        huffman_t tmp=max_code;
+        do
+        {
+            i--;
+            if((tmp&1)!=1)
+            {
+                fprintf(stderr, "Foute huffman maximale code, niet allemaal 1: huff_code[%"PRI_SYMBOL_COUNT_T"]=%" PRI_HUFFMAN_T "!=%" PRI_HUFFMAN_T "\n", max_len_symbol, huff_codes[max_len_symbol], ~((~(huffman_t)0)<<max_len));
+                result++;
+            }
+            tmp>>=1;
+        } while(i>0);
+        if(tmp!=0)
+        {
+            fprintf(stderr, "Foute huffman maximale code, te veel 1: huff_code[%"PRI_SYMBOL_COUNT_T"]=%" PRI_HUFFMAN_T "!=%" PRI_HUFFMAN_T "\n", max_len_symbol, huff_codes[max_len_symbol], ~((~(huffman_t)0)<<max_len));
+            result++;
+        }
+    }
+    return result;
 }
 
 void make_huffman_codes(int s_len[], huffman_t huff_codes[], symbol_count_t symbol_count)
@@ -265,6 +458,7 @@ void make_huffman_codes(int s_len[], huffman_t huff_codes[], symbol_count_t symb
         len_count[s_len[i]]++;
     } while(i>0);
     huffman_t start_huffcode=0;
+    huffcode[0]=0;
     for(i=1; i<=MAX_HUFFMAN_LEN; i++)
     {
         start_huffcode<<=1;
@@ -273,43 +467,43 @@ void make_huffman_codes(int s_len[], huffman_t huff_codes[], symbol_count_t symb
     }
     for(i=0; i<symbol_count; i++)
     {
-        if(s_len[i]>0)
-        {
-            huff_codes[i]=huffcode[s_len[i]];
-            huffcode[s_len[i]]++;
-        }
-        else
-        {
-            huff_codes[i]=0;
-        }
+        huff_codes[i]=huffcode[s_len[i]];
+        huffcode[s_len[i]]+=(s_len[i]!=0);
     }
 }
 
 int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq[], int max_huff_len, const symbol_count_t symbol_size)
 {
-    freq_t freq_array[MAX_SYMBOL_SIZE+1]={0};
-    symbol_count_t tree_array[MAX_HUFFMAN_LEN*MAX_SYMBOL_SIZE*2];
+    static freq_t freq_array[MAX_SYMBOL_SIZE+1];
+    static symbol_count_t tree_array[MAX_HUFFMAN_LEN*MAX_SYMBOL_SIZE*2];
+    static symbol_t symbols[MAX_SYMBOL_SIZE];
+    static freq_t pairs_freq[MAX_SYMBOL_SIZE];
     symbol_count_t* tree=tree_array;
-    symbol_t symbols[MAX_SYMBOL_SIZE];
-    freq_t pairs_freq[MAX_SYMBOL_SIZE];
     freq_t* freq=freq_array+1;
     symbol_count_t symbol_count=0;
     symbol_count_t pairs_count;
+    symbol_count_t i;
     const uint64_t een=1;
     if(max_huff_len>MAX_HUFFMAN_LEN)
     {
-        printf("max_huff_len te groot: %i\n", max_huff_len);
+        fprintf(stderr, "max_huff_len te groot: %i\n", max_huff_len);
         return -1;
     }
     if(max_huff_len<64)
     {
         if((een<<max_huff_len)<symbol_size)
         {
-            printf("(1<<max_huff_len) < symbol_size : 1<<%" PRIX64 " < %" PRIX64 "\n", een<<max_huff_len, symbol_size);
+            fprintf(stderr, "(1<<max_huff_len) < symbol_size : 1<<%" PRIi64 " < %" PRI_SYMBOL_COUNT_T "\n", een<<max_huff_len, symbol_size);
             return -1;
         }
     }
-    symbol_count_t i=symbol_size;
+    if(symbol_size>MAX_SYMBOL_SIZE)
+    {
+        fprintf(stderr, "symbolsize(%i)>MAX_SYMBOL_SIZE(%i)\n", symbol_size, MAX_SYMBOL_SIZE);
+        return -1;
+    }
+    memset(freq_array, 0, sizeof(freq_array));
+    i=symbol_size;
     do
     { /* hoeveel symbols zijn er met een freq>0? */
         i--;
@@ -326,6 +520,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
     }
     {
         uint64_t time_start=rdtsc();
+        //radix_sort_symbols(symbols, freq, symbol_count);
         sort_symbols(symbols, freq, symbol_count);
         time_sort+=rdtsc()-time_start;
     }
@@ -424,17 +619,18 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         } while(i>0);
         max_huff_len--;
     } while(max_huff_len>0);
+
     memset(s_len, 0, symbol_size*sizeof(s_len[0]));
     {
         uint64_t time_start=rdtsc();
         symbol_count_t i;
-        for(i=-1; i<symbol_count; i++)
+        for(i=0; i<symbol_count; i++)
         {
             freq[i]=0;
         }
-        i=2*(symbol_count-1);  /* N symbolen levert altidj N-1 pairs op */
+        i=2*(symbol_count-1);  /* N symbolen levert altijd N-1 pairs op */
         do
-        { /* s_len wordt berekend door het aantal keer dat een bepaald symbool in de eeste (symbol_count-1) pairs voorkomt */
+        {
             freq[-1]=0;
             do
             {
@@ -481,45 +677,7 @@ uint64_t encode(const uint8_t *data, const int64_t size, const symbol_count_t sy
                     totaal+=freq[i]*s_len[i];
                 }
                 /* sanity check Huffcodes */
-                {
-                    symbol_count_t i;
-                    huffman_t max_code=0;
-                    for(i=0; i<symbol_size; i++)
-                    {
-                        if(huffcodes[i]>max_code)
-                        {
-                            max_code=huffcodes[i];
-                        }
-                    }
-                    i=0;
-                    while(max_code&1)
-                    {
-                        i++;
-                        max_code>>=1;
-                    }
-                    if(i>max_huff_len)
-                    {
-                        for(i=0; i<symbol_size; i++)
-                        {
-                            if(huffcodes[i]>max_code)
-                            {
-                                max_code=huffcodes[i];
-                            }
-                        }
-                        printf("Error, %X>max huffcode(%i)\n", (int)max_code, max_huff_len);
-                    }
-                    if(max_code!=0)
-                    {
-                        for(i=0; i<symbol_size; i++)
-                        {
-                            if(huffcodes[i]>max_code)
-                            {
-                                max_code=huffcodes[i];
-                            }
-                        }
-                        printf("Error rare maxcode: %X huffcode(%i)\n", (int)max_code, max_huff_len);
-                    }
-                }
+                huffman_sanety_check(s_len, huffcodes, symbol_size, max_huff_len);
             }
             pos+=delta;
             if(0)
@@ -529,7 +687,7 @@ uint64_t encode(const uint8_t *data, const int64_t size, const symbol_count_t sy
                 {
                     if(s_len[i]!=0)
                     {
-                        printf("%02lX, len=%i, huff=%lX\n", i, s_len[i], huffcodes[i]);
+                        printf("%" PRI_SYMBOL_COUNT_T", len=%i, huff=%"PRI_HUFFMAN_T"\n", i, s_len[i], huffcodes[i]);
                     }
                 }
             }
@@ -546,7 +704,18 @@ int main(int argc, char* argv[])
 	int max_huff_len;
 	uint64_t start=rdtsc();
 	uint64_t delta=4096;
-	for(max_huff_len=16; max_huff_len<=16; max_huff_len++)
+	int symbol_size;
+	symbol_size=65536;
+	do
+	{
+	int symbol_bits=0;
+	int tmp=symbol_size>>1;
+	while(tmp!=0)
+	{
+	    symbol_bits++;
+		tmp>>=1;
+	}
+	for(max_huff_len=symbol_bits; max_huff_len<=64; max_huff_len++)
 	{
 	    i=1;
 	    make_crc32_table(crc_table);
@@ -556,7 +725,6 @@ int main(int argc, char* argv[])
 			uint32_t crc;
 			int64_t size;
 			uint8_t* data;
-			const int symbol_size=256;
 //			printf("%s: ",argv[i]);
 			size=load_file(argv[i], &data);
 			if(data==NULL)
@@ -573,8 +741,10 @@ int main(int argc, char* argv[])
 			free(data);
 			i++;
 		}
-		printf("Totaal(%02i) = %lu\n", max_huff_len, totaal);
+//		printf("Totaal(%02i) = %lu\n", max_huff_len, totaal);
 	}
-	printf("Tijd(delta=%li) totaal=%li make_huffmantable=%li, sort=%li, walktree=%li\n", delta, rdtsc()-start, time_huffman, time_sort, time_walktree);
+	printf("Tijd(delta=%li, symbol_size=%i) totaal=%li make_huffmantable=%li, sort=%li, walktree=%li\n", delta, symbol_size, rdtsc()-start, time_huffman, time_sort, time_walktree);
+	symbol_size>>=1;
+	} while(symbol_size>2);
     return 0;
 }

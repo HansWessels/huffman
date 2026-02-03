@@ -513,13 +513,13 @@ void make_huffman_codes(int s_len[], huffman_t huff_codes[], symbol_count_t symb
 
 int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq[], int max_huff_len, const symbol_count_t symbol_size)
 {
-    static freq_t freq_array[MAX_SYMBOL_SIZE+1];
+    static freq_t freq_array[MAX_SYMBOL_SIZE*2];
     static symbol_count_t tree_array[MAX_HUFFMAN_LEN*MAX_SYMBOL_SIZE*2];
     static symbol_t symbols[MAX_SYMBOL_SIZE];
-    static freq_t pairs_freq[MAX_SYMBOL_SIZE];
     static int len[2*MAX_SYMBOL_SIZE];
     symbol_count_t* tree=tree_array;
     freq_t* freq=freq_array+1;
+    freq_t* pairs_freq=freq+MAX_SYMBOL_SIZE;
     symbol_count_t symbol_count=0;
     symbol_count_t pairs_count;
     symbol_count_t i;
@@ -542,7 +542,6 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         fprintf(stderr, "symbolsize(%i)>MAX_SYMBOL_SIZE(%i)\n", symbol_size, MAX_SYMBOL_SIZE);
         return -1;
     }
-    memset(freq_array, 0, sizeof(freq_array));
     i=symbol_size;
     do
     { /* hoeveel symbols zijn er met een freq>0? */
@@ -585,36 +584,36 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         symbol_count_t pair_pos=1;
         symbol_count_t node;
         freq[symbol_count]=~0; /* sentry */
-        for(node=2; node<symbol_count; node++)
+        for(node=1; node<symbol_count; node++)
         {
             pairs_freq[node]=~0; /* sentries */
         }
-        node=symbol_count;
+        node=1;
         do
         {
             if(freq[symbol_pos]<=pairs_freq[pair_pos])
             {
-                tree[tree_pos]=symbols[symbol_pos];
+                tree[tree_pos]=symbol_pos;
                 parent_freq=freq[symbol_pos];
                 symbol_pos++;
             }
             else
             {
-                tree[tree_pos]=-symbol_pos;
-                parent_freq=pairs_freq[symbol_pos];
+                tree[tree_pos]=-pair_pos;
+                parent_freq=pairs_freq[pair_pos];
                 pair_pos++;
             }
             tree_pos++;
             if(freq[symbol_pos]<=pairs_freq[pair_pos])
             {
-                tree[tree_pos]=symbols[symbol_pos];
+                tree[tree_pos]=symbol_pos;
                 parent_freq+=freq[symbol_pos];
                 symbol_pos++;
             }
             else
             {
-                tree[tree_pos]=-symbol_pos;
-                parent_freq+=pairs_freq[symbol_pos];
+                tree[tree_pos]=-pair_pos;
+                parent_freq+=pairs_freq[pair_pos];
                 pair_pos++;
             }
             tree_pos++;

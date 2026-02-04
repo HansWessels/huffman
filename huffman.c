@@ -647,21 +647,30 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         }
         time_normal_tree+=rdtsc()-time_start;
     }
-    freq--; /* freq array index 1 based */
+    freq+=symbol_count; /* freq array index 1 based */
     pairs_freq[0]=0; /* sentry */
-    pairs_count=symbol_count>>1;
-    i=pairs_count;
-    do
-    { /* eerste ronde, gewoon de gegeven character bij elkaar voegen */
-        i--;
-        pairs_freq[i+1]=freq[i*2+1]+freq[i*2+2];
-        tree[i*2]=i*2+1;
-        tree[i*2+1]=i*2+2;
-    } while(i>0);
-    max_huff_len--;
+    {
+        symbol_count_t symbol_pos;
+        pairs_count=symbol_count>>1;
+        symbol_pos=-1-(symbol_count&1);
+        i=pairs_count;
+        do
+        { /* eerste ronde, gewoon de gegeven character bij elkaar voegen */
+            i--;
+            freq_t node_freq;
+            node_freq=freq[symbol_pos];
+            tree[i*2+1]=symbol_pos;
+            symbol_pos--;
+            node_freq+=freq[symbol_pos];
+            tree[i*2]=symbol_pos;
+            symbol_pos--;
+            pairs_freq[i+1]=node_freq;
+        } while(i>0);
+        max_huff_len--;
+    }
     do
     { /* merge symbols, max_huff_len-1 keer */
-        symbol_count_t symbol_pos=symbol_count;
+        symbol_count_t symbol_pos=-1;
         symbol_count_t pair_pos=pairs_count;
         freq_t next_symbol_freq=freq[symbol_pos];
         freq_t next_pair_freq=pairs_freq[pair_pos];
@@ -722,8 +731,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
     {
         uint64_t time_start=rdtsc();
         symbol_count_t i;
-        freq++; /* freq array weer 0 based */
-        memset(freq+1, 0, symbol_size*(sizeof(freq[0])));
+        memset(freq-symbol_count, 0, symbol_count*(sizeof(freq[0])));
         i=2*(symbol_count-1);  /* N symbolen levert altijd N-1 pairs op */
         do
         {
@@ -737,7 +745,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
             tree-=symbol_count*2;
         } while(i>0);
         i=symbol_count;
-        freq++; /* unde 1 based index */
+        freq-=symbol_count; /* undo negatieve symbol index */
         do
         {
             i--;

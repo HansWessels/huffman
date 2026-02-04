@@ -514,7 +514,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
 {
     static freq_t freq_array[MAX_SYMBOL_SIZE*2];
     static symbol_count_t tree_array[MAX_HUFFMAN_LEN*MAX_SYMBOL_SIZE*2];
-    static symbol_t symbols[MAX_SYMBOL_SIZE+1];
+    static symbol_t symbols[MAX_SYMBOL_SIZE];
     static int len[2*MAX_SYMBOL_SIZE];
     symbol_count_t* tree=tree_array;
     freq_t* freq=freq_array;
@@ -554,7 +554,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         }
     } while(i>0);
     if(symbol_count<3)
-    {
+    { /* special cases 0, 1 en 2 symbolen */
         huffman_t code=0;
         memset(s_len, 0, symbol_size*sizeof(s_len[0]));
         memset(huff_codes, 0, symbol_size*sizeof(huff_codes[0]));

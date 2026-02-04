@@ -19,7 +19,7 @@ uint64_t rdtsc(){
 #endif
 
 
-#define MAX_SYMBOL_SIZE 257
+#define MAX_SYMBOL_SIZE 256
 #define MAX_HUFFMAN_LEN 16
 
 #if MAX_SYMBOL_SIZE <= 256 /* voor max_symbol_size <=256 */
@@ -514,11 +514,11 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
 {
     static freq_t freq_array[MAX_SYMBOL_SIZE*2];
     static symbol_count_t tree_array[MAX_HUFFMAN_LEN*MAX_SYMBOL_SIZE*2];
-    static symbol_t symbols[MAX_SYMBOL_SIZE];
+    static symbol_t symbols[MAX_SYMBOL_SIZE+1];
     static int len[2*MAX_SYMBOL_SIZE];
     symbol_count_t* tree=tree_array;
     freq_t* freq=freq_array;
-    freq_t* pairs_freq=freq+MAX_SYMBOL_SIZE+1;
+    freq_t* pairs_freq=freq+MAX_SYMBOL_SIZE;
     symbol_count_t symbol_count;
     symbol_count_t pairs_count;
     symbol_count_t i;
@@ -542,7 +542,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         return -1;
     }
     i=symbol_size;
-    symbol_count=1;
+    symbol_count=0;
     do
     { /* hoeveel symbols zijn er met een freq>0? */
         i--;
@@ -553,7 +553,6 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
             symbol_count++;
         }
     } while(i>0);
-    symbol_count--;
     if(symbol_count<3)
     {
         huffman_t code=0;
@@ -572,8 +571,8 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
     }
     {
         uint64_t time_start=rdtsc();
-        radix_sort_symbols(symbols+1, freq+1, symbol_count);
-        //sort_symbols(symbols+1, freq+1, symbol_count);
+        radix_sort_symbols(symbols, freq, symbol_count);
+        //sort_symbols(symbols, freq, symbol_count);
         time_sort+=rdtsc()-time_start;
     }
     if(0)
@@ -648,6 +647,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         }
         time_normal_tree+=rdtsc()-time_start;
     }
+    freq--; /* freq array index 1 based */
     pairs_freq[0]=0; /* sentry */
     pairs_count=symbol_count>>1;
     i=pairs_count;
@@ -683,7 +683,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         pairs_count>>=1;
         i=pairs_count;
         do
-        { /* maak de nieuwe pairs, exit lus altijd doordat de pairs op zijn */
+        { /* maak de nieuwe pairs */
             freq_t node_freq;
             i--;
             if(next_pair_freq>next_symbol_freq)
@@ -722,6 +722,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
     {
         uint64_t time_start=rdtsc();
         symbol_count_t i;
+        freq++; /* freq array weer 0 based */
         memset(freq+1, 0, symbol_size*(sizeof(freq[0])));
         i=2*(symbol_count-1);  /* N symbolen levert altijd N-1 pairs op */
         do
@@ -736,10 +737,11 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
             tree-=symbol_count*2;
         } while(i>0);
         i=symbol_count;
+        freq++; /* unde 1 based index */
         do
         {
-            s_len[symbols[i]]=(int)freq[i];
             i--;
+            s_len[symbols[i]]=(int)freq[i];
         } while(i>0);
         time_walktree+=rdtsc()-time_start;
     }

@@ -648,13 +648,13 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         }
         time_normal_tree+=rdtsc()-time_start;
     }
-    pairs_freq[-1]=0; /* sentry */
+    pairs_freq[0]=0; /* sentry */
     pairs_count=symbol_count>>1;
     i=pairs_count;
     do
     { /* eerste ronde, gewoon de gegeven character bij elkaar voegen */
         i--;
-        pairs_freq[i]=freq[i*2+1]+freq[i*2+2];
+        pairs_freq[i+1]=freq[i*2+1]+freq[i*2+2];
         tree[i*2]=i*2+1;
         tree[i*2+1]=i*2+2;
     } while(i>0);
@@ -662,7 +662,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
     do
     { /* merge symbols, max_huff_len-1 keer */
         symbol_count_t symbol_pos=symbol_count;
-        symbol_count_t pair_pos=pairs_count-1;
+        symbol_count_t pair_pos=pairs_count;
         freq_t next_symbol_freq=freq[symbol_pos];
         freq_t next_pair_freq=pairs_freq[pair_pos];
         tree+=symbol_count*2;
@@ -714,7 +714,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
                 symbol_pos--;
                 next_symbol_freq=freq[symbol_pos];
             }
-            pairs_freq[i]=node_freq;
+            pairs_freq[i+1]=node_freq;
         } while(i>0);
         max_huff_len--;
     } while(max_huff_len>0);

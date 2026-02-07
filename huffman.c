@@ -32,9 +32,9 @@ uint64_t read_cycle_counter(void)
 #endif
 
 
-#define MAX_SYMBOL_SIZE 512
+#define MAX_SYMBOL_SIZE 256
 #define MAX_HUFFMAN_LEN 16
-#define MAX_FREQ 65535
+#define MAX_FREQ 1<<31
 #define USE_FAST_INTS
 
 #ifndef USE_FAST_INTS
@@ -92,7 +92,7 @@ uint64_t read_cycle_counter(void)
     typedef uint16_t freq_t;
     #define PRI_FREQ_T PRIX16
 #elif MAX_FREQ <= (1<<32)
-    typedef uintt32_t freq_t;
+    typedef uint32_t freq_t;
     #define PRI_FREQ_T PRIX32
 #else
     typedef uint64_t freq_t;
@@ -905,7 +905,7 @@ int main(int argc, char* argv[])
 	int max_huff_len;
 	uint64_t start;
 	uint64_t total_time;
-	uint64_t delta=4096;
+	uint64_t delta=4096000000;
 	int symbol_size;
 	int counter=0;
 	time_huffman=0;
@@ -917,7 +917,7 @@ int main(int argc, char* argv[])
 	{
 	    int symbol_bits=0;
 		int tmp;
-		symbol_size=256;
+		symbol_size=MAX_SYMBOL_SIZE;
 		tmp=symbol_size-1;
 		while(tmp!=0)
 	    {

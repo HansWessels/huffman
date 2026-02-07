@@ -32,10 +32,10 @@ uint64_t read_cycle_counter(void)
 #endif
 
 
-#define MAX_SYMBOL_SIZE 65536
-#define MAX_HUFFMAN_LEN 16
-#define MAX_FREQ 63336
-#define USE_FAST_INTS
+#define MAX_SYMBOL_SIZE 5
+#define MAX_HUFFMAN_LEN 3
+#define MAX_FREQ 63335
+//#define USE_FAST_INTS
 
 #ifndef USE_FAST_INTS
 #if MAX_SYMBOL_SIZE <= 256 /* voor max_symbol_size <=256 */
@@ -43,7 +43,7 @@ uint64_t read_cycle_counter(void)
     #define PRI_SYMBOL_T PRIu8
     typedef int16_t symbol_count_t;
     #define PRI_SYMBOL_COUNT_T PRIi16
-#elif MAX_SYMBOL_SIZE <= 32768 /* voor max_simbol_size <=32768 */
+#elif MAX_SYMBOL_SIZE < 32768 /* voor max_symbol_size <32768 */
     typedef uint16_t symbol_t;
     #define PRI_SYMBOL_T PRIu16
     typedef int16_t symbol_count_t;
@@ -53,7 +53,7 @@ uint64_t read_cycle_counter(void)
     #define PRI_SYMBOL_T PRIu16
     typedef int32_t symbol_count_t;
     #define PRI_SYMBOL_COUNT_T PRIi32
-#elif MAX_SYMBOL_SIZE <= (1<<31) /* voor max_simbol_size <=1<<31 */
+#elif MAX_SYMBOL_SIZE < (1<<31) /* voor max_simbol_size <1<<31 */
     typedef uint32_t symbol_t;
     #define FORMAT_SYMBOL_T PRIu32
     typedef int32_t symbol_count_t;
@@ -85,13 +85,13 @@ uint64_t read_cycle_counter(void)
     #define PRI_HUFFMAN_T PRIX64
 #endif
 
-#if MAX_FREQ <= 8
+#if MAX_FREQ < (1<<8)
     typedef uint8_t freq_t;
     #define PRI_FREQ_T PRIX8
-#elif MAX_FREQ <= 16
+#elif MAX_FREQ < (1<<16)
     typedef uint16_t freq_t;
     #define PRI_FREQ_T PRIX16
-#elif MAX_FREQ <= 32
+#elif MAX_FREQ <= (1<<32)
     typedef uintt32_t freq_t;
     #define PRI_FREQ_T PRIX32
 #else
@@ -106,22 +106,22 @@ uint64_t read_cycle_counter(void)
     #define PRI_SYMBOL_T PRIuFAST8
     typedef int_fast16_t symbol_count_t;
     #define PRI_SYMBOL_COUNT_T PRIiFAST16
-#elif MAX_SYMBOL_SIZE <= 32768 /* voor max_simbol_size <=32768 */
+#elif MAX_SYMBOL_SIZE < 32768 /* voor max_simbol_size <32768 */
     typedef uint_fast16_t symbol_t;
     #define PRI_SYMBOL_T PRIuFAST16
     typedef int_fast16_t symbol_count_t;
     #define PRI_SYMBOL_COUNT_T PRIiFAST16
-#elif MAX_SYMBOL_SIZE <= 65536 /* voor max_simbol_size <=65536 */
+#elif MAX_SYMBOL_SIZE <= 65536 /* voor max_simbol_size <65536 */
     typedef uint_fast16_t symbol_t;
     #define PRI_SYMBOL_T PRIuFAST16
     typedef int_fast32_t symbol_count_t;
     #define PRI_SYMBOL_COUNT_T PRIiFAST32
-#elif MAX_SYMBOL_SIZE <= (1<<31) /* voor max_simbol_size <=1<<31 */
+#elif MAX_SYMBOL_SIZE < (1<<31) /* voor max_simbol_size <1<<31 */
     typedef uint_fast32_t symbol_t;
     #define FORMAT_SYMBOL_T PRIuFAST32
     typedef int_fast32_t symbol_count_t;
     #define PRI_SYMBOL_COUNT_T PRIiFAST32
-#elif MAX_SYMBOL_SIZE <= (1<<32) /* voor max_simbol_size <=1<<32 */
+#elif MAX_SYMBOL_SIZE <= (1<<32) /* voor max_simbol_size <1<<32 */
     typedef uint_fast32_t symbol_t;
     #define PRI_SYMBOL_T PRIuFAST32
     typedef int_fast64_t symbol_count_t;
@@ -148,13 +148,13 @@ uint64_t read_cycle_counter(void)
     #define PRI_HUFFMAN_T PRIX64
 #endif
 
-#if MAX_FREQ <= 8
+#if MAX_FREQ < (1<<8)
     typedef uint_fast8_t freq_t;
     #define PRI_FREQ_T PRIX8
-#elif MAX_FREQ <= 16
+#elif MAX_FREQ < (1<<16)
     typedef uint_fast16_t freq_t;
     #define PRI_FREQ_T PRIX16
-#elif MAX_FREQ <= 32
+#elif MAX_FREQ < (1<<32)
     typedef uint_fast32_t freq_t;
     #define PRI_FREQ_T PRIX32
 #else
@@ -265,7 +265,7 @@ int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t sym
             if(huff_codes[i]!=0)
             {
                 fprintf(stderr, "Zero length huffman code has a non zero code: s_len[%"PRI_SYMBOL_COUNT_T"]=%i, huffcode=%" PRI_HUFFMAN_T "\n", i, s_len[i], huff_codes[i]);
-                return -1;
+                exit(-1);
             }
         }
         else
@@ -274,7 +274,7 @@ int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t sym
             if(s_len[i]>max_huff_len)
             {
                 fprintf(stderr, "Length huffman code is larger as the limit: s_len[%"PRI_SYMBOL_COUNT_T"]=%i > %i (max_huffman_len)\n", i, s_len[i], max_huff_len);
-                return -1;
+                exit(-1);
             }
             len_count[s_len[i]]++;
             if(s_len[i]>=max_len)
@@ -293,7 +293,7 @@ int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t sym
                 if(len>s_len[i])
                 {
                     fprintf(stderr, "Length huffman code is larger as its stated length: len(%" PRI_HUFFMAN_T ")=%i > s_len[%"PRI_SYMBOL_COUNT_T"]=%i\n", huff_codes[i], len, i, s_len[i]);
-                    return -1;
+                    exit(-1);
                 }
             }
 
@@ -306,12 +306,12 @@ int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t sym
             if(max_len>1)
             {
                 fprintf(stderr, "Length of the single huffman code is larger as 1: len(%i)=%i > 1\n", max_len_symbol, s_len[i]);
-                return -1;
+                exit(-1);
             }
             if(huff_codes[max_len_symbol]!=0)
             {
                 fprintf(stderr, "Huffmancode of the single huffman code is not zero: huffman_code[%"PRI_SYMBOL_COUNT_T"]=%" PRI_HUFFMAN_T " != 0\n", huff_codes[max_len_symbol], s_len[i]);
-                return -1;
+                exit(-1);
             }
         }
         return 0;
@@ -328,7 +328,7 @@ int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t sym
         if(totaal!=correct)
         {
             fprintf(stderr, "Tree is not complete, totaal: %" PRI_HUFFMAN_T " != correct: %" PRI_HUFFMAN_T "\n", totaal, correct);
-            return -1;
+            exit(-1);
         }
     }
     /* klopt de tree? */
@@ -347,7 +347,7 @@ int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t sym
             if(huff_codes[i]!=huffcode[s_len[i]])
             {
                 fprintf(stderr, "Wrong huffman code: huff_code[%"PRI_SYMBOL_COUNT_T"]=%" PRI_HUFFMAN_T "!=%" PRI_HUFFMAN_T "\n", i, huff_codes[i], huffcode[s_len[i]]);
-                return -1;
+                exit(-1);
             }
             if(s_len[i]!=0)
             {
@@ -402,10 +402,11 @@ void freq_count(const uint8_t *data, uint64_t size, freq_t freq[], symbol_count_
     }
     huffman_t symbol_mask=0;
     uint64_t current_value=0;
-    symbol_size>>=1;
-    while(symbol_size!=0)
+    symbol_size--;
+    i=symbol_size;
+    while(i!=0)
     {
-        symbol_size>>=1;
+        i>>=1;
         symbol_mask<<=1;
         symbol_mask^=1;
     }
@@ -417,6 +418,10 @@ void freq_count(const uint8_t *data, uint64_t size, freq_t freq[], symbol_count_
         current_value>>=8;
         current_value+=(uint64_t)data[pos+7]<<56;
         tmp=(symbol_t)(current_value&symbol_mask);
+        if(tmp>symbol_size)
+        {
+            tmp>>=1;
+        }
         freq[tmp]++;
     }
 }
@@ -599,7 +604,7 @@ void make_huffman_codes(int s_len[], huffman_t huff_codes[], symbol_count_t symb
         start_huffcode+=len_count[i];
     }
     for(i=0; i<symbol_count; i++)
-
+    {
         huff_codes[i]=huffcode[s_len[i]];
         huffcode[s_len[i]]+=(s_len[i]!=0);
     }
@@ -607,7 +612,7 @@ void make_huffman_codes(int s_len[], huffman_t huff_codes[], symbol_count_t symb
 
 int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq[], int max_huff_len, const symbol_count_t symbol_size)
 {
-    static freq_t freq_array[MAX_SYMBOL_SIZE*2-1];
+    static freq_t freq_array[MAX_SYMBOL_SIZE*2];
     static symbol_count_t tree_array[MAX_HUFFMAN_LEN*MAX_SYMBOL_SIZE*2];
     static symbol_t symbols[MAX_SYMBOL_SIZE];
     symbol_count_t* tree=tree_array;
@@ -911,14 +916,13 @@ int main(int argc, char* argv[])
 	{
 	    int symbol_bits=0;
 		int tmp=symbol_size>>1;
-		symbol_size=256;
+		symbol_size=65536;
 		while(tmp!=0)
 	    {
 	        symbol_bits++;
 			tmp>>=1;
 		}
 		max_huff_len=symbol_bits+8;
-		max_huff_len=16;
 		//for(max_huff_len=symbol_bits; max_huff_len<=16; max_huff_len++)
 	    {
 	        i=1;
@@ -936,15 +940,23 @@ int main(int argc, char* argv[])
 					printf("Error loading %s\n", argv[i]);
 					return -1;
 				}
-				start=read_cycle_counter();
 		        {
 		            uint64_t result;
+					if(max_huff_len>MAX_HUFFMAN_LEN)
+					{
+					    max_huff_len=MAX_HUFFMAN_LEN;
+					}
+					if(symbol_size>MAX_SYMBOL_SIZE)
+					{
+					    symbol_size=MAX_SYMBOL_SIZE;
+					}
+					start=read_cycle_counter();
 					result=encode(data, size, symbol_size, max_huff_len, delta);
+					total_time+=read_cycle_counter()-start;
 //				    printf("hufflen=%02i, size=%lu\n", max_huff_len, result);
 				    totaal+=result;
 				}
 				free(data);
-				total_time+=read_cycle_counter()-start;
 				i++;
 			}
 		    printf("Totaal(%02i) = %" PRIu64 "\n", max_huff_len, totaal);
@@ -952,6 +964,6 @@ int main(int argc, char* argv[])
 //		printf("Tijd(delta=%li, grens=%i) totaal=%li tradi_huffmantable=%li, sort=%li, walktree=%li\n", delta, INSERTION_GRENS, total_time>>17, time_normal_tree>>17, time_sort>>17, time_walktree>>17);
 	    counter--;
 	} while(counter>0);
-	printf("Tijd(delta=%" PRIu64 ", grens=%i) totaal=%" PRI_CYCLE " tradi_huffmantable=%" PRI_CYCLE ", sort=%" PRI_CYCLE ", walktree=%" PRI_CYCLE "\n", delta, INSERTION_GRENS, total_time>>CYCLE_SHIFT_LEVEL, time_normal_tree>>CYCLE_SHIFT_LEVEL, time_sort>>CYCLE_SHIFT_LEVEL, time_walktree>>CYCLE_SHIFT_LEVEL);
+	printf("Tijd(delta=%" PRIu64 ") totaal=%" PRI_CYCLE " tradi_huffmantable=%" PRI_CYCLE ", sort=%" PRI_CYCLE ", walktree=%" PRI_CYCLE "\n", delta, total_time>>CYCLE_SHIFT_LEVEL, time_normal_tree>>CYCLE_SHIFT_LEVEL, time_sort>>CYCLE_SHIFT_LEVEL, time_walktree>>CYCLE_SHIFT_LEVEL);
     return 0;
 }

@@ -9,6 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+//#define DO_TIMING
+#define USE_FAST_INTS
+
+#ifdef DO_TIMING
 #define PRI_CYCLE PRIu64
 #if defined(__aarch64__)
 
@@ -31,11 +35,16 @@ uint64_t read_cycle_counter(void)
 }
 #endif
 
+uint64_t time_huffman=0;
+uint64_t time_sort=0;
+uint64_t time_walktree=0;
+uint64_t time_normal_tree=0;
+
+#endif // DO_TIMING
 
 #define MAX_SYMBOL_SIZE 256
 #define MAX_HUFFMAN_LEN 16
 #define MAX_FREQ 1<<31
-#define USE_FAST_INTS
 
 #ifndef USE_FAST_INTS
 #if MAX_SYMBOL_SIZE <= 256 /* voor max_symbol_size <=256 */
@@ -69,7 +78,6 @@ uint64_t read_cycle_counter(void)
     typedef int64_t symbol_count_t;
     #define PRI_SYMBOL_COUNT_T PRIi64
 #endif
-
 
 #if MAX_HUFFMAN_LEN <= 8
     typedef uint8_t huffman_t;
@@ -133,7 +141,6 @@ uint64_t read_cycle_counter(void)
     #define PRI_SYMBOL_COUNT_T PRIiFAST64
 #endif
 
-
 #if MAX_HUFFMAN_LEN <= 8
     typedef uint_fast8_t huffman_t;
     #define PRI_HUFFMAN_T PRIXFAST8
@@ -162,12 +169,7 @@ uint64_t read_cycle_counter(void)
     #define PRI_FREQ_T PRIXFAST64
 #endif
 
-#endif
-
-uint64_t time_huffman=0;
-uint64_t time_sort=0;
-uint64_t time_walktree=0;
-uint64_t time_normal_tree=0;
+#endif // USE_FAST_INTS
 
 /*
 ** ARJ CRC32 routines
@@ -426,51 +428,6 @@ void freq_count(const uint8_t *data, uint64_t size, freq_t freq[], symbol_count_
     }
 }
 
-typedef struct
-{
-    freq_t freq;
-    symbol_t symbol;
-} freq_compare_t;
-
-int freq_compare(const void* a_in, const void* b_in)
-{
-    const freq_compare_t* a=(freq_compare_t *)a_in;
-    const freq_compare_t* b=(freq_compare_t *)b_in;
-    if (a->freq < b->freq)
-    {
-        return -1;
-    }
-    if (a->freq > b->freq)
-    {
-        return 1;
-    }
-    return 0;
-}
-
-/*
- * sorten met Q sort is ongeveer twee maal langzamer als radix sort
- */
-void sort_symbols(symbol_t symbols[MAX_SYMBOL_SIZE], freq_t freq[MAX_SYMBOL_SIZE], symbol_count_t symbol_count)
-{
-    freq_compare_t pairs[MAX_SYMBOL_SIZE];
-    symbol_count_t i;
-    for(i=0; i<symbol_count; i++)
-    {
-        pairs[i].freq=freq[i];
-        pairs[i].symbol=symbols[i];
-    }
-    qsort(pairs, symbol_count, sizeof(freq_compare_t), freq_compare);
-    for(i=0; i<symbol_count; i++)
-    {
-        freq[i]=pairs[i].freq;
-        symbols[i]=pairs[i].symbol;
-    }
-}
-
-/*
- * Het lijkt er op dat het geen zin heeft om voor kleine datasets insertion sort te
- * gebruiken i.p.v. radix sort, ik heb geen significante tijd wints kunnen meten.
- */
 
 #define INSERTION_GRENS 16
 
@@ -654,8 +611,8 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
     if(symbol_count<3)
     { /* special cases 0, 1 en 2 symbolen */
         huffman_t code=0;
-        memset(s_len, 0, symbol_size*sizeof(s_len[0]));
-        memset(huff_codes, 0, symbol_size*sizeof(huff_codes[0]));
+        memset(s_len, 0, (size_t)symbol_size*sizeof(s_len[0]));
+        memset(huff_codes, 0, (size_t)symbol_size*sizeof(huff_codes[0]));
         for(i=0; i<symbol_size; i++)
         {
             if(in_freq[i]!=0)
@@ -668,14 +625,19 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         return 0;
     }
     {
+#ifdef DO_TIMING
         uint64_t time_start=read_cycle_counter();
+#endif
         radix_sort_symbols(symbols, freq, symbol_count);
-        //sort_symbols(symbols, freq, symbol_count);
+#ifdef DO_TIMING
         time_sort+=read_cycle_counter()-time_start;
+#endif
     }
     freq+=symbol_count; /* freq array index -1 based */
     { /* eerst een traditionele huffmanboom bouwen */
+#ifdef DO_TIMING
         uint64_t time_start=read_cycle_counter();
+#endif
         symbol_count_t* len=tree+3*symbol_count;
         symbol_count_t symbol_pos=-symbol_count;
         symbol_count_t child=0;
@@ -683,7 +645,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         symbol_count_t node;
         for(node=0; node<symbol_count; node++)
         {
-            freq[node]=~0; /* sentries */
+            freq[node]=~((freq_t)0); /* sentries */
         }
         node=symbol_count-1;
         do
@@ -730,17 +692,21 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
             len-=symbol_count;
             if(len[0]<=max_huff_len)
             {
-                memset(s_len, 0, symbol_size*sizeof(s_len[0]));
+                memset(s_len, 0, (size_t)symbol_size*sizeof(s_len[0]));
                 for(i=0; i<symbol_count; i++)
                 {
                     s_len[symbols[i]]=len[i];
                 }
                 make_huffman_codes(s_len, huff_codes, symbol_size);
+#ifdef DO_TIMING
                 time_normal_tree+=read_cycle_counter()-time_start;
+#endif
                 return 0;
             }
         }
+#ifdef DO_TIMING
         time_normal_tree+=read_cycle_counter()-time_start;
+#endif
     }
     freq[0]=0; /* sentry */
     {
@@ -821,11 +787,13 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         } while(i>0);
         max_huff_len--;
     } while(max_huff_len>0);
-    memset(s_len, 0, symbol_size*sizeof(s_len[0]));
+    memset(s_len, 0, (size_t)symbol_size*sizeof(s_len[0]));
     {
+#ifdef DO_TIMING
         uint64_t time_start=read_cycle_counter();
+#endif
         symbol_count_t i;
-        memset(freq-symbol_count, 0, symbol_count*(sizeof(freq[0])));
+        memset(freq-symbol_count, 0, (size_t)symbol_count*(sizeof(freq[0])));
         i=2*(symbol_count-1);  /* N symbolen levert altijd N-1 pairs op */
         do
         {
@@ -845,7 +813,9 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
             i--;
             s_len[symbols[i]]=(int)freq[i];
         } while(i>0);
+#ifdef DO_TIMING
         time_walktree+=read_cycle_counter()-time_start;
+#endif
     }
     make_huffman_codes(s_len, huff_codes, symbol_size);
     return 0;
@@ -868,9 +838,13 @@ uint64_t encode(const uint8_t *data, const int64_t size, const symbol_count_t sy
         if(delta>1)
         {
             freq_count(data+pos, delta, freq, symbol_size);
+#ifdef DO_TIMING
             uint64_t time_start=read_cycle_counter();
+#endif
             make_huffman_table(s_len, huffcodes, freq, max_huff_len, symbol_size);
+#ifdef DO_TIMING
             time_huffman+=read_cycle_counter()-time_start;
+#endif
             {
                 symbol_count_t i;
                 for(i=0; i<symbol_size; i++)
@@ -905,14 +879,16 @@ int main(int argc, char* argv[])
 	int max_huff_len;
 	uint64_t start;
 	uint64_t total_time;
-	uint64_t delta=4096000000;
+	uint64_t delta=4096;
 	int symbol_size;
 	int counter=0;
+#ifdef DO_TIMING
 	time_huffman=0;
 	time_sort=0;
 	time_walktree=0;
 	time_normal_tree=0;
 	total_time=0;
+#endif
 	do
 	{
 	    int symbol_bits=0;
@@ -953,9 +929,13 @@ int main(int argc, char* argv[])
 					{
 					    symbol_size=MAX_SYMBOL_SIZE;
 					}
+#ifdef DO_TIMING
 					start=read_cycle_counter();
+#endif
 					result=encode(data, size, symbol_size, max_huff_len, delta);
+#ifdef DO_TIMING
 					total_time+=read_cycle_counter()-start;
+#endif
 //				    printf("hufflen=%02i, size=%lu\n", max_huff_len, result);
 				    totaal+=result;
 				}
@@ -967,6 +947,8 @@ int main(int argc, char* argv[])
 //		printf("Tijd(delta=%li, grens=%i) totaal=%li tradi_huffmantable=%li, sort=%li, walktree=%li\n", delta, INSERTION_GRENS, total_time>>17, time_normal_tree>>17, time_sort>>17, time_walktree>>17);
 	    counter--;
 	} while(counter>0);
+#ifdef DO_TIMING
 	printf("Tijd(delta=%" PRIu64 ", max_huffman_len=%i) totaal=%" PRI_CYCLE " tradi_huffmantable=%" PRI_CYCLE ", sort=%" PRI_CYCLE ", walktree=%" PRI_CYCLE "\n", delta, MAX_HUFFMAN_LEN, total_time>>CYCLE_SHIFT_LEVEL, time_normal_tree>>CYCLE_SHIFT_LEVEL, time_sort>>CYCLE_SHIFT_LEVEL, time_walktree>>CYCLE_SHIFT_LEVEL);
+#endif
     return 0;
 }

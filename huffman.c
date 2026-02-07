@@ -599,7 +599,7 @@ void make_huffman_codes(int s_len[], huffman_t huff_codes[], symbol_count_t symb
         start_huffcode+=len_count[i];
     }
     for(i=0; i<symbol_count; i++)
-    {
+
         huff_codes[i]=huffcode[s_len[i]];
         huffcode[s_len[i]]+=(s_len[i]!=0);
     }

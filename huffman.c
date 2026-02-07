@@ -612,7 +612,7 @@ void make_huffman_codes(int s_len[], huffman_t huff_codes[], symbol_count_t symb
 
 int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq[], int max_huff_len, const symbol_count_t symbol_size)
 {
-    static freq_t freq_array[MAX_SYMBOL_SIZE*2+1];
+    static freq_t freq_array[MAX_SYMBOL_SIZE*2];
     static symbol_count_t tree_array[MAX_HUFFMAN_LEN*MAX_SYMBOL_SIZE*2];
     static symbol_t symbols[MAX_SYMBOL_SIZE];
     symbol_count_t* tree=tree_array;
@@ -673,18 +673,19 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         //sort_symbols(symbols, freq, symbol_count);
         time_sort+=read_cycle_counter()-time_start;
     }
+    freq+=symbol_count; /* freq array index -1 based */
     { /* eerst een traditionele huffmanboom bouwen */
         uint64_t time_start=read_cycle_counter();
-        symbol_count_t* len=tree+2*symbol_count;
-        symbol_count_t symbol_pos=0;
+        symbol_count_t* len=tree+3*symbol_count;
+        symbol_count_t symbol_pos=-symbol_count;
         symbol_count_t child=0;
-        symbol_count_t pair_pos=symbol_count+1;
+        symbol_count_t pair_pos=symbol_count-1;
         symbol_count_t node;
-        for(node=symbol_count; node<(2*symbol_count); node++)
+        for(node=0; node<symbol_count; node++)
         {
             freq[node]=~0; /* sentries */
         }
-        node=symbol_count+1;
+        node=symbol_count-1;
         do
         {
             freq_t node_freq;
@@ -698,7 +699,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
             {
                 tree[child++]=pair_pos;
                 node_freq=freq[pair_pos];
-                pair_pos++;
+                pair_pos--;
             }
             if(freq[symbol_pos]<freq[pair_pos])
             {
@@ -710,12 +711,12 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
             {
                 tree[child++]=pair_pos;
                 node_freq+=freq[pair_pos];
-                pair_pos++;
+                pair_pos--;
             }
             freq[node]=node_freq;
-            node++;
-        } while(node<(2*symbol_count));
-        node--;
+            node--;
+        } while(node>0);
+        node++;
         { /* bouw s_len */
             len[node]=0;
             do
@@ -724,8 +725,9 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
                 current_len=len[node]+1;
                 len[tree[--child]]=current_len;
                 len[tree[--child]]=current_len;
-                node--;
+                node++;
             } while(child>0);
+            len-=symbol_count;
             if(len[0]<=max_huff_len)
             {
                 memset(s_len, 0, symbol_size*sizeof(s_len[0]));
@@ -740,7 +742,6 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         }
         time_normal_tree+=read_cycle_counter()-time_start;
     }
-    freq+=symbol_count; /* freq array index -1 based */
     freq[0]=0; /* sentry */
     {
         symbol_count_t symbol_pos;

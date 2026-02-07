@@ -182,7 +182,7 @@ uint64_t time_normal_tree=0;
 
 void make_crc32_table(uint32_t crc_table[])
 {
-  int max_bits=8;
+  const int max_bits=8;
   int bits=1;
   crc_table[0]=0;
   crc_table[1<<(max_bits-1)]=0xEDB88320UL;
@@ -242,72 +242,98 @@ uint32_t crc32byte(uint8_t c, uint32_t crc_table[], uint32_t crc)
 	return crc;
 }
 
-
-int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t symbol_count, int max_huff_len)
+int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t symbol_size, int max_huff_len)
 {
+    symbol_count_t len_count[MAX_HUFFMAN_LEN+1]={0};
     int max_len=0;
     symbol_count_t max_len_symbol;
+    symbol_count_t symbol_count=0;
     symbol_count_t i;
-    int result=0;
-    i=symbol_count;
+    i=symbol_size;
     max_len_symbol=0;
+
+    if(max_huff_len>MAX_HUFFMAN_LEN)
+    {
+        fprintf(stderr, "Given max_huffman len is bigger as the fixed length limit: max_huffman_len=%i > %i (MAX_HUFFMAN_LEN).\n", max_huff_len, MAX_HUFFMAN_LEN);
+        return -1;
+    }
     do
     {
         i--;
-        if(s_len[i]>max_len)
+        if(s_len[i]==0)
         {
-            max_len=s_len[i];
-            max_len_symbol++;
+            if(huff_codes[i]!=0)
+            {
+                fprintf(stderr, "Zero length huffman code has a non zero code: s_len[%"PRI_SYMBOL_COUNT_T"]=%i, huffcode=%" PRI_HUFFMAN_T "\n", i, s_len[i], huff_codes[i]);
+                return -1;
+            }
         }
-    } while(i>0);
-    if((max_len_symbol<2) && (max_len<=1))
-    { /* aantal symbolen <2, noets te checken */
-        return result;
-    }
-    /* max_len > max_huff_len? */
-    if(max_len>max_huff_len)
-    {
-        i=symbol_count;
-        do
+        else
         {
-            i--;
+            symbol_count++;
             if(s_len[i]>max_huff_len)
             {
-                fprintf(stderr, "Te lange huffmancode: s_len[%"PRI_SYMBOL_COUNT_T"]=%i, huffcode=%" PRI_HUFFMAN_T " > %i (MAX_HUFF_LEN)\n", i, s_len[i], huff_codes[i], max_huff_len);
-                result++;
+                fprintf(stderr, "Length huffman code is larger as the limit: s_len[%"PRI_SYMBOL_COUNT_T"]=%i > %i (max_huffman_len)\n", i, s_len[i], max_huff_len);
+                return -1;
+            }
+            len_count[s_len[i]]++;
+            if(s_len[i]>=max_len)
+            {
+                max_len=s_len[i];
+                max_len_symbol=i;
+            }
+            { /* test lengte van huffman code */
+                huffman_t code=huff_codes[i];
+                int len=0;
+                while(code!=0)
+                {
+                    len++;
+                    code>>=1;
+                }
+                if(len>s_len[i])
+                {
+                    fprintf(stderr, "Length huffman code is larger as its stated length: len(%" PRI_HUFFMAN_T ")=%i > s_len[%"PRI_SYMBOL_COUNT_T"]=%i\n", huff_codes[i], len, i, s_len[i]);
+                    return -1;
+                }
+            }
+
+        }
+    } while(i>0);
+    if(symbol_count<2)
+    { /* aantal symbolen <2, weinig te checken */
+        if(symbol_count==1)
+        {
+            if(max_len>1)
+            {
+                fprintf(stderr, "Length of the single huffman code is larger as 1: len(%i)=%i > 1\n", max_len_symbol, s_len[i]);
+                return -1;
+            }
+            if(huff_codes[max_len_symbol]!=0)
+            {
+                fprintf(stderr, "Huffmancode of the single huffman code is not zero: huffman_code[%"PRI_SYMBOL_COUNT_T"]=%" PRI_HUFFMAN_T " != 0\n", huff_codes[max_len_symbol], s_len[i]);
+                return -1;
             }
         }
-        while(i>0);
+        return 0;
     }
-    /* is geen van de huffman_codes > max_len? */
+    /* is de tree compleet? */
     {
-        uint64_t mask;
-        mask=0;
-        mask=~mask;
-        mask<<=max_len;
-        i=symbol_count;
-        do
+        huffman_t totaal=0;
+        huffman_t correct=1;
+        for (i=1; i<=max_len; i++)
         {
-            i--;
-            if((huff_codes[i]&mask)!=0)
-            {
-                fprintf(stderr, "Te lange huffmancode: s_len[%"PRI_SYMBOL_COUNT_T"]=%i, huffcode=%" PRI_HUFFMAN_T "\n", i, s_len[i], huff_codes[i]);
-                result++;
-            }
-        } while(i>0);
+            totaal+=(len_count[i]<<(max_len-i));
+            correct<<=1;
+        }
+        if(totaal!=correct)
+        {
+            fprintf(stderr, "Tree is not complete, totaal: %" PRI_HUFFMAN_T " != correct: %" PRI_HUFFMAN_T "\n", totaal, correct);
+            return -1;
+        }
     }
     /* klopt de tree? */
     {
-        int len_count[MAX_HUFFMAN_LEN+1]={0};
         huffman_t huffcode[MAX_HUFFMAN_LEN+1];
-        huffman_t max_code;
-        symbol_count_t i;
-        i=symbol_count;
-        do
-        {
-            i--;
-            len_count[s_len[i]]++;
-        } while(i>0);
         huffman_t start_huffcode=0;
         huffcode[0]=0;
         for(i=1; i<=MAX_HUFFMAN_LEN; i++)
@@ -316,48 +342,20 @@ int huffman_sanety_check(int s_len[], huffman_t huff_codes[], symbol_count_t sym
             huffcode[i]=start_huffcode;
             start_huffcode+=len_count[i];
         }
-        for(i=0; i<symbol_count; i++)
+        for(i=0; i<symbol_size; i++)
         {
             if(huff_codes[i]!=huffcode[s_len[i]])
             {
-                fprintf(stderr, "Foute huffman code: huff_code[%"PRI_SYMBOL_COUNT_T"]=%" PRI_HUFFMAN_T "!=%" PRI_HUFFMAN_T "\n", i, huff_codes[i], huffcode[s_len[i]]);
-                result++;
+                fprintf(stderr, "Wrong huffman code: huff_code[%"PRI_SYMBOL_COUNT_T"]=%" PRI_HUFFMAN_T "!=%" PRI_HUFFMAN_T "\n", i, huff_codes[i], huffcode[s_len[i]]);
+                return -1;
             }
             if(s_len[i]!=0)
             {
                 huffcode[s_len[i]]++;
             }
         }
-        i=symbol_count;
-        max_code=0;
-        do
-        {
-            i--;
-            if(huff_codes[i]>max_code)
-            {
-                max_code=huff_codes[i];
-                max_len_symbol=i;
-            }
-        } while(i>0);
-        i=max_len;
-        huffman_t tmp=max_code;
-        do
-        {
-            i--;
-            if((tmp&1)!=1)
-            {
-                fprintf(stderr, "Foute huffman maximale code, niet allemaal 1: huff_code[%"PRI_SYMBOL_COUNT_T"]=%" PRI_HUFFMAN_T "!=%" PRI_HUFFMAN_T "\n", max_len_symbol, huff_codes[max_len_symbol], ~((~(huffman_t)0)<<max_len));
-                result++;
-            }
-            tmp>>=1;
-        } while(i>0);
-        if(tmp!=0)
-        {
-            fprintf(stderr, "Foute huffman maximale code, te veel 1: huff_code[%"PRI_SYMBOL_COUNT_T"]=%" PRI_HUFFMAN_T "!=%" PRI_HUFFMAN_T "\n", max_len_symbol, huff_codes[max_len_symbol], ~((~(huffman_t)0)<<max_len));
-            result++;
-        }
     }
-    return result;
+    return 0;
 }
 
 
@@ -502,13 +500,11 @@ void radix_sort_symbols(symbol_t symbols[MAX_SYMBOL_SIZE], freq_t freq[MAX_SYMBO
     symbol_count_t bucket[BUCKET_SIZE];
     freq_t max=0;
     int shift=0;
-#if 0
     if(symbol_count<INSERTION_GRENS)
     {
         insertion_sort_symbols(symbols, freq, symbol_count);
         return;
     }
-#endif
     symbol_count_t i=symbol_count;
     do
     {
@@ -905,7 +901,7 @@ int main(int argc, char* argv[])
 	uint64_t total_time;
 	uint64_t delta=4096;
 	int symbol_size;
-	int counter=16;
+	int counter=0;
 	time_huffman=0;
 	time_sort=0;
 	time_walktree=0;

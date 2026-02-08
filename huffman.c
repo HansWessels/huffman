@@ -390,6 +390,7 @@ int64_t load_file(char* infile, uint8_t** data_in)
 		return -1;
 	}
 	fclose(f);
+	memset(data+size, 0, 1024*sizeof(data[0]));
 	*data_in=data;
 	return size;
 }
@@ -879,7 +880,7 @@ int main(int argc, char* argv[])
 	int max_huff_len;
 	uint64_t start;
 	uint64_t total_time;
-	uint64_t delta=4096;
+	uint64_t delta=4096000000;
 	int symbol_size;
 	int counter=0;
 #ifdef DO_TIMING
@@ -936,7 +937,7 @@ int main(int argc, char* argv[])
 #ifdef DO_TIMING
 					total_time+=read_cycle_counter()-start;
 #endif
-//				    printf("hufflen=%02i, size=%lu\n", max_huff_len, result);
+//				    printf("%s, %" PRIu64 "\n", argv[i], result);
 				    totaal+=result;
 				}
 				free(data);

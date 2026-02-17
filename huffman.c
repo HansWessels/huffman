@@ -13,32 +13,32 @@
 #define USE_FAST_INTS
 
 #ifdef DO_TIMING
-#define PRI_CYCLE PRIu64
-#if defined(__aarch64__)
+    #define PRI_CYCLE PRIu64
+    #if defined(__aarch64__)
 
-#include <mach/mach_time.h>
-#define CYCLE_SHIFT_LEVEL 15
+        #include <mach/mach_time.h>
+        #define CYCLE_SHIFT_LEVEL 10
 
-uint64_t  read_cycle_counter(void)
-{
-    return mach_absolute_time();
-}
-#else
-#define CYCLE_SHIFT_LEVEL 17
+        uint64_t  read_cycle_counter(void)
+        {
+            return mach_absolute_time();
+        }
+    #else
+        #define CYCLE_SHIFT_LEVEL 17
 
-uint64_t read_cycle_counter(void)
-{
-    // Fallback to x86/other
-    uint32_t lo, hi;
-    __asm__ __volatile__ ("rdtsc" : "=a" (lo), "=d" (hi));
-    return ((uint64_t)hi << 32) | lo;
-}
-#endif
+        uint64_t read_cycle_counter(void)
+        {
+            // Fallback to x86/other
+            uint32_t lo, hi;
+            __asm__ __volatile__ ("rdtsc" : "=a" (lo), "=d" (hi));
+            return ((uint64_t)hi << 32) | lo;
+        }
+    #endif
 
-uint64_t time_huffman=0;
-uint64_t time_sort=0;
-uint64_t time_walktree=0;
-uint64_t time_normal_tree=0;
+    uint64_t time_huffman=0;
+    uint64_t time_sort=0;
+    uint64_t time_walktree=0;
+    uint64_t time_normal_tree=0;
 
 #endif // DO_TIMING
 
@@ -399,10 +399,7 @@ void freq_count(const uint8_t *data, uint64_t size, freq_t freq[], symbol_count_
 {
     symbol_count_t i;
     uint64_t pos;
-    for(i=0; i<symbol_size; i++)
-    {
-        freq[i]=0;
-    }
+    memset(freq, 0, (size_t)symbol_size*sizeof(freq[0]));
     huffman_t symbol_mask=0;
     uint64_t current_value=0;
     symbol_size--;
@@ -794,7 +791,7 @@ int make_huffman_table(int s_len[], huffman_t huff_codes[], const freq_t in_freq
         uint64_t time_start=read_cycle_counter();
 #endif
         symbol_count_t i;
-        memset(freq-symbol_count, 0, (size_t)symbol_count*(sizeof(freq[0])));
+        memset(freq-symbol_count, 0, (size_t)symbol_count*sizeof(freq[0]));
         i=2*(symbol_count-1);  /* N symbolen levert altijd N-1 pairs op */
         do
         {
